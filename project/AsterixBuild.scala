@@ -9,8 +9,6 @@ import com.typesafe.sbt.packager.archetypes.JavaAppPackaging
 import com.typesafe.sbt.SbtScalariform
 import com.typesafe.sbt.SbtScalariform.ScalariformKeys
 
-// import com.typesafe.sbt.SbtStartScript
-
 import sbtassembly.AssemblyPlugin.autoImport._
 
 import org.apache.maven.artifact.handler.DefaultArtifactHandler
@@ -69,6 +67,7 @@ object AsterixBuild extends Build with StandardLibraries {
       "org.jsoup" % "jsoup" % "1.8.3"
     ) ++ Libs.fastutil
       ++ Libs.scallop
+      ++ Libs.scalaz
       ++ Libs.playJson
       ++ Libs.akka,
 
