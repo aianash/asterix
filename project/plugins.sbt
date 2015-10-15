@@ -20,7 +20,7 @@ addSbtPlugin("com.typesafe.sbt" % "sbt-multi-jvm" % "0.3.9")
 
 addSbtPlugin("com.typesafe.sbt" % "sbt-scalariform" % "1.3.0")
 
-addSbtPlugin("com.goshoplane" % "sbt-standard-libraries" % "0.1.1")
+addSbtPlugin("com.goshoplane" % "sbt-standard-libraries" % "0.1.2")
 
 addSbtPlugin("com.typesafe.sbt" % "sbt-native-packager" % "1.0.2")
 

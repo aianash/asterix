@@ -45,7 +45,7 @@ object AsterixBuild extends Build with StandardLibraries {
     base = file("."),
     settings = Project.defaultSettings ++
       sharedSettings
-  ) aggregate (core, crawler)
+  ) aggregate (core, crawler, processing)
 
   lazy val core = Project(
     id = "asterix-core",
@@ -76,4 +76,30 @@ object AsterixBuild extends Build with StandardLibraries {
       sbt.Process(Seq("ln", "-sf", path.toString, "asterix-crawler"), cwd) ! streams.log
     }
   ) dependsOn(core)
+
+  lazy val processing = Project(
+    id = "asterix-processing",
+    base = file("processing"),
+    settings = Project.defaultSettings ++ sharedSettings
+  ).enablePlugins(JavaAppPackaging)
+  .settings(
+    name := "asterix-processing",
+
+    libraryDependencies ++= Seq(
+      "org.jsoup" % "jsoup" % "1.8.3"
+    ) ++ Libs.fastutil
+      ++ Libs.scallop
+      ++ Libs.scalaz
+      ++ Libs.playJson
+      ++ Libs.akka
+      ++ Libs.commonsCatalogue
+      ++ Libs.hemingway
+      ++ Seq("com.goshoplane" %% "cassie-catalogue" % "0.0.1"),
+
+    makeScript <<= (stage in Universal, stagingDirectory in Universal, baseDirectory in ThisBuild, streams) map { (_, dir, cwd, streams) =>
+      var path = dir / "bin" / "asterix-processing"
+      sbt.Process(Seq("ln", "-sf", path.toString, "asterix-processing"), cwd) ! streams.log
+    }
+  ) dependsOn(core)
+
 }
