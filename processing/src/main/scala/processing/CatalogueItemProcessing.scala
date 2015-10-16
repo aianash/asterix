@@ -40,9 +40,7 @@ object CatalogueItemProcessing {
 
     // actor system
     val system = ActorSystem(settings.getString("actorSystem"), config)
-    // Microservice(system).start(IndexedSeq(CatalogueItemProcessorComponent(argsConf, settings)))
-
-    system.actorOf(CatalogueItemProcessor.props(argsConf, settings), "catalogue-item-processor")
+    Microservice(system).start(IndexedSeq(CatalogueItemProcessorComponent(argsConf, settings)))
   }
 
 }
