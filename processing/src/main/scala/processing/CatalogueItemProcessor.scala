@@ -1,40 +1,38 @@
 package asterix.processing
 
-import scala.io.Source
 import scala.concurrent.duration._
-import scala.concurrent.ExecutionContext.Implicits.global
-import scala.concurrent.Await
 import scala.collection.mutable.Map
+import scala.io.Source
+
+import java.util.concurrent.TimeUnit
 
 import play.api.libs.json._
 import org.rogach.scallop._
 
-import akka.actor.ActorSystem
+import akka.actor.{Actor, ActorLogging, Props}
 import akka.util.Timeout
-import akka.pattern.ask
+import akka.pattern.pipe
+import akka.routing.FromConfig
 
-import com.typesafe.config.ConfigFactory
+import com.typesafe.config.Config
 
 import hemingway.dictionary._
 
 import commons.catalogue._, items._, attributes._
 import commons.owner.{StoreId, BrandId}
 
-import cassie.catalogue.CatalogueService
 import cassie.catalogue.protocols._
 
 import goshoplane.commons.core.services.{UUIDGenerator, NextId}
 import goshoplane.commons.core.protocols.Implicits._
 
-class Conf(args: Seq[String]) extends ScallopConf(args) {
-  val input   = opt[String](required = true)
-  val storeId = opt[Long](required = true)
-  val brandId = opt[Long](required = true)
-  val brand = opt[String]()
-  val gender = opt[String]()
-}
 
-object CatalogueItemProcessing {
+sealed trait CatalogueItemProcessorProtocols
+case object StoreCatalogueItems extends CatalogueItemProcessorProtocols
+
+class CatalogueItemProcessor(args: Conf, settings: Config) extends Actor with ActorLogging {
+
+  import context.dispatcher
 
   val styleDict = InMemoryDictionary()
   val styles = ClothingStyle.styles map (_.name)
@@ -44,42 +42,40 @@ object CatalogueItemProcessing {
   val itemTypeDict = InMemoryDictionary()
   itemTypeGroups foreach { x => itemTypeDict += x }
 
-  val sim = similarity.Jaccard(0.2)
+  val sim = similarity.Jaccard(settings.getLong("jaccard.alpha"))
 
-  def main(args: Array[String]) {
-    // command line argument config
-    val argsConf  = new Conf(args)
-    val inputFile = argsConf.input()
+  val UUID = context.actorOf(UUIDGenerator.props(settings.getInt("service.id"), settings.getInt("datacenter.id")))
+  val catalogueService = context.actorOf(FromConfig.props(), name = "catalogue-service")
 
-    // application config file
-    val config = ConfigFactory.load("processing")
-    val settings = config.getConfig("processing")
+  override def preStart() {
+    context.system.scheduler.scheduleOnce(5000 milliseconds, self, StoreCatalogueItems)
+  }
 
-    // actor system
-    val system = ActorSystem(settings.getString("actorSystem"))
-    // uuid generator
-    val UUID = system.actorOf(UUIDGenerator.props(settings.getInt("service.id"), settings.getInt("datacenter.id")))
-    // catalogue service actor
-    val catalogueService = system.actorOf(CatalogueService.props)
-    implicit val timeout = Timeout(2 seconds)
 
-    val lines = Source.fromFile(inputFile).getLines
-    lines foreach { line =>
-      val uuidF = UUID ?= NextId("catalogue")
-      uuidF foreach { uuid =>
-        val storeitem = processJson(line, argsConf, uuid.get)
-        val status = catalogueService ?= InsertStoreCatalogueItem(Seq(storeitem))
-      }
+  def receive = {
+
+    case StoreCatalogueItems =>
+      val inputFile = args.input()
+      val lines = Source.fromFile(inputFile).getLines
+      lines foreach { line => storeCatalogueItem(line) }
+
+  }
+
+  private def storeCatalogueItem(jsonStr: String) = {
+    implicit val timeout = Timeout(1 seconds)
+    (UUID ?= NextId("catalogue")) foreach { uuid =>
+      val storeitem = processJson(jsonStr, uuid.get)
+      catalogueService ! InsertStoreCatalogueItem(Seq(storeitem))
     }
   }
 
-  private def processJson(jsonStr: String, conf: Conf, uuid: Long) = {
+  private def processJson(jsonStr: String, uuid: Long) = {
     val json = Json.parse(jsonStr)
 
     // suggested values / ids
-    val suggestedBrand = conf.brand.get
-    val beandId        = conf.brandId()
-    val storeId        = StoreId(conf.storeId())
+    val suggestedBrand = args.brand.get
+    val beandId        = args.brandId()
+    val storeId        = StoreId(args.storeId())
 
     // ids
     val itemId    = CatalogueItemId(uuid)
@@ -93,7 +89,7 @@ object CatalogueItemProcessing {
     val colors      = (json \ "colors").asOpt[Seq[String]] map { x => Colors(x.map(_.toUpperCase)) } getOrElse Colors(Seq.empty[String])
     val brand       = ((json \ "brand").asOpt[String] orElse(suggestedBrand)).map(Brand(_)).getOrElse(Brand(""))
     val namedType   = (json \ "itemType").asOpt[String] map { x => NamedType(x) } getOrElse NamedType("")
-    val gender      = ((json \ "gender").asOpt[String] orElse conf.gender.get) map { x => Gender(x)} getOrElse Gender("")
+    val gender      = ((json \ "gender").asOpt[String] orElse args.gender.get) map { x => Gender(x)} getOrElse Gender("")
     val itemUrl     = (json \ "url").asOpt[String] map { x => ItemUrl(x) } getOrElse ItemUrl("")
 
     // sizes
@@ -174,7 +170,7 @@ object CatalogueItemProcessing {
    */
   private def getItemTypeGroup(gender: String, itemGroup: Seq[String]) = {
     val itg2score = Map.empty[(String, ItemTypeGroup), Double]
-    itemGroup map { x =>
+    itemGroup foreach { x =>
       itemTypeDict.findSimilar(gender + x, sim, 1) foreach { x1 => itg2score += ((x, ItemTypeGroup(x1.str.get)) -> x1.score) }
     }
     itg2score.maxBy(_._2)._1
@@ -202,4 +198,8 @@ object CatalogueItemProcessing {
     ((regex1 findFirstIn size) orElse (regex2 findFirstIn size)).getOrElse("").toUpperCase
   }
 
+}
+
+object CatalogueItemProcessor {
+  def props(args: Conf, settings: Config) = Props(classOf[CatalogueItemProcessor], args, settings)
 }

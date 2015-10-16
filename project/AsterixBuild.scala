@@ -94,7 +94,8 @@ object AsterixBuild extends Build with StandardLibraries {
       ++ Libs.akka
       ++ Libs.commonsCatalogue
       ++ Libs.hemingway
-      ++ Seq("com.goshoplane" %% "cassie-catalogue" % "0.0.1"),
+      ++ Seq("com.goshoplane" %% "cassie-catalogue" % "0.0.1")
+      ++ Libs.microservice,
 
     makeScript <<= (stage in Universal, stagingDirectory in Universal, baseDirectory in ThisBuild, streams) map { (_, dir, cwd, streams) =>
       var path = dir / "bin" / "asterix-processing"
