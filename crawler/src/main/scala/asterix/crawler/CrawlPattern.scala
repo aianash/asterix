@@ -16,21 +16,18 @@ import scalaz._, Scalaz._
 
 import org.jsoup._
 
-
-case class CrawlPattern(val url: URL, config: Config) {
-  import WebPage._
+trait CrawlPattern[T] {
   import WebPageTypes.Parser
 
-  val detailPgElementsConfig = config.getAnyRefList("item-page").asScala
-  val itemDetailPageP: Parser[JsObject] =
-    sequence(
-      detailPgElementsConfig.flatMap {
-        case ElementParser(parser) => parser.as[JsObject].some
-        case _ => None
-      }
-    ) map (_.reduceOption(_ deepMerge _) getOrElse Json.obj())
+  def host: String
+  def config: Config
+  def parser: Parser[T]
+}
 
-  val entriesSelector = config.getString("entries-selector")
+//
+case class ItemListPageCrawlPattern(host: String, config: Config) extends CrawlPattern[(List[String], JsObject)] {
+  import WebPage._
+  import WebPageTypes.Parser
 
   val injectConfig = config.getAnyRefList("inject-to-items").asScala
   val injectP: Parser[JsObject] =
@@ -41,22 +38,27 @@ case class CrawlPattern(val url: URL, config: Config) {
       }
     ) map (_.reduceOption(_ deepMerge _) getOrElse Json.obj())
 
-  val detailsP: Parser[List[JsObject]] =
-    select(entriesSelector)(attr("abs:href"))
-      .flatMap { links =>
-        sequence(
-          links.map { url =>
-            println(s"parsing ${url}")
-            (Jsoup.connect(url).timeout(5000).get +> itemDetailPageP)
-              .map(_ + ("url" -> JsString(url)))
-          }
-        )
-      }
 
-  val parser: Parser[List[JsObject]] =
+  private val entriesSelector = config.getString("entries-selector")
+
+  val parser: Parser[(List[String], JsObject)] =
     for {
-      inject  <- injectP
-      details <- detailsP
-    } yield details.map(_ deepMerge inject)
+      inject <- injectP
+      urls   <- select(entriesSelector)(attr("abs:href"))
+    } yield urls -> inject
+}
 
+//
+case class DetailPageCrawlPattern(host: String, config: Config, inject: JsObject) extends CrawlPattern[JsObject] {
+  import WebPage._
+  import WebPageTypes.Parser
+
+  val detailPgElementsConfig = config.getAnyRefList("item-page").asScala
+  val parser: Parser[JsObject] =
+    sequence(
+      detailPgElementsConfig.flatMap {
+        case ElementParser(parser) => parser.as[JsObject].some
+        case _ => None
+      }
+    ) map (_.reduceOption(_ deepMerge _) getOrElse Json.obj()) map (_ deepMerge inject)
 }

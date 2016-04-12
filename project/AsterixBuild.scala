@@ -69,7 +69,8 @@ object AsterixBuild extends Build with StandardLibraries {
       ++ Libs.scallop
       ++ Libs.scalaz
       ++ Libs.playJson
-      ++ Libs.akka,
+      ++ Libs.akka
+      ++ Libs.commonsCore,
 
     makeScript <<= (stage in Universal, stagingDirectory in Universal, baseDirectory in ThisBuild, streams) map { (_, dir, cwd, streams) =>
       var path = dir / "bin" / "asterix-crawler"
