@@ -8,6 +8,9 @@ import org.rogach.scallop._
 import com.typesafe.config._
 
 import akka.actor.{ActorSystem, Props}
+import akka.pattern.pipe
+
+import goshoplane.commons.core.services.UUIDGenerator
 
 
 object RunCrawler {
@@ -28,31 +31,24 @@ object RunCrawler {
     val seedf = s"seeds/$domain-$category-seeds.txt"
 
     val system = ActorSystem("asterix")
+    val uuid = system.actorOf(UUIDGenerator.props(1L, 1L), "uuid")
+    UUID.uuid(uuid)
     val crawler = system.actorOf(Crawler.props(), "crawler")
 
     val config =
       ConfigFactory.load("crawler")
                    .getConfig("crawler")
 
+    implicit val ec = system.dispatcher
     val seeds = SeedURLUtils.get(seedf)
     seeds.foreach { urlstr =>
       val url = new URL(urlstr)
       val pattern = ItemListPageCrawlPattern(url.getHost, config.getConfig(url.getHost.replace(".", "-")))
-      val job = ExtractItemURLs(-1L, new URL(urlstr), pattern, 1, false)
-      crawler ! Push(job)
+      val jobF = UUID.id("job") map (idO => ExtractItemURLs(idO.get, new URL(urlstr), pattern, 1, false))
+      jobF.map(Push(_)) pipeTo crawler
     }
 
-    // for(urlstr <- seeds) {
-    //   println(s"Processing seed url $urlstr")
-    //   val url = new java.net.URL(urlstr)
-    //   val config =
-    //     ConfigFactory.load("crawler")
-    //                  .getConfig("crawler")
-    //                  .getConfig(url.getHost.replace(".", "-"))
-    //   val pattern = CrawlPattern(url, config)
-    //   Crawler(outputf, pattern).start
-    //   Thread.sleep(cmd.delay())
-    // }
+    crawler ! Schedule
   }
 
 }

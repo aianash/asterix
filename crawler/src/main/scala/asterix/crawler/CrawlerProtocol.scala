@@ -9,3 +9,4 @@ case object Schedule extends CrawlerProtocol
 case class Completed(job: Job) extends CrawlerProtocol
 case class Failed(job: Job) extends CrawlerProtocol
 case class Append(jsons: List[JsObject]) extends CrawlerProtocol
+case object ShowStats extends CrawlerProtocol
