@@ -20,7 +20,9 @@ class Worker extends Actor with ActorLogging {
         case Success(msgs) =>
           msgs foreach ( replyTo ! _)
           replyTo ! Completed(job)
-        case Failure(ex) => replyTo ! Failed(job)
+        case Failure(ex) =>
+          log.error(ex, "Error in executing job = {}", job)
+          replyTo ! Failed(job)
       }
   }
 }

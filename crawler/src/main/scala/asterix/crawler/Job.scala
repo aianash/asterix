@@ -7,7 +7,7 @@ import scala.concurrent.{Future, ExecutionContext}
 import scala.sys.process._
 
 import java.net.URL
-import java.io.File
+import java.io._
 import java.util.concurrent.ConcurrentLinkedQueue
 
 import org.jsoup._, nodes.Document
@@ -104,6 +104,15 @@ case class DetailPage2Json(id: Long, batch: List[String], pattern: DetailPageCra
 case class FetchImages(id: Long, batch: List[JsObject], config: Config, attempt: Int, isRetry: Boolean) extends Job {
   val outputdir = config.getString("image-output-dir")
 
+  var imgReplace: String = null
+  var imgReplaceWith: String = null
+  if(config.hasPath("image-url-correction")) {
+    imgReplace = config.getString("image-url-correction.replace")
+    imgReplaceWith = config.getString("image-url-correction.with")
+  }
+
+  val doCorrection = imgReplace != null && imgReplaceWith != null
+
   val level = JobQueue.LEVEL_1
 
   def execute()(implicit ex: ExecutionContext) = Future {
@@ -116,10 +125,30 @@ case class FetchImages(id: Long, batch: List[JsObject], config: Config, attempt:
     } foreach {
       case (filename, url) =>
         println(s"\t Saving $url to $filename")
-        new URL(url) #> new File(s"$outputdir/$filename") !
+        val nurl = correctUrl(url)
+        val file = new File(s"$outputdir/$filename")
+        val out = new BufferedOutputStream(new FileOutputStream(file))
+        try {
+          val in = (new URL(nurl)) openStream
+          val byteArray = Stream.continually(in.read).takeWhile(-1 !=).map(_.toByte).toArray
+          out.write(byteArray)
+        } catch {
+          case ex: FileNotFoundException =>
+            println(s"\t Error in $url to be saved at $filename")
+            out.close
+            file.delete
+        } finally {
+          out.flush
+          out.close
+        }
+        // new URL(nurl) #> new File(s"$outputdir/$filename") !
     }
     List.empty
   }
+
+  private def correctUrl(url: String) =
+    if(doCorrection) url.replaceAllLiterally(imgReplace, imgReplaceWith)
+    else url
 
   def getImgType(url: String) = { "jpeg" }
 
